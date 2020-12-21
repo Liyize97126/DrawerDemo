@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <declare-styleable name="DrawerViewContainer">
+        <attr name="scroll_control" format="boolean" />
+    </declare-styleable>
+
     <declare-styleable name="DrawerView">
         <attr name="top_hover" format="float" />
     </declare-styleable>

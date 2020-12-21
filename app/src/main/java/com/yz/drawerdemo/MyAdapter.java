@@ -17,8 +17,12 @@ class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
     List<String> mDataList;
 
     public void setDataList(List<String> dataList) {
-        mDataList = dataList;
+        mDataList.addAll(dataList);
         notifyDataSetChanged();
+    }
+
+    public void clear(){
+        mDataList.clear();
     }
 
     public MyAdapter(MainActivity mainActivity, Context context) {

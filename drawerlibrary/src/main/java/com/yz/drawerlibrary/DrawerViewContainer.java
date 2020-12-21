@@ -1,7 +1,10 @@
 package com.yz.drawerlibrary;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -17,6 +20,7 @@ import androidx.customview.widget.ViewDragHelper;
 public class DrawerViewContainer extends FrameLayout implements ViewStateManager {
     /**
      * {@link DrawerView} 控件
+     * 其中mDrawerView为空布局，用来占位，防止应用崩溃。
      */
     private DrawerView mDrawerView, mBottomView;
     /**
@@ -39,6 +43,20 @@ public class DrawerViewContainer extends FrameLayout implements ViewStateManager
      */
     private float mGetMeasure;
 
+    /**
+     * 用于确认是否开启子控件（抽屉）滚动监听事件
+     */
+    private boolean mScrollControl = false;
+
+    public boolean isScrollControl() {
+        return mScrollControl;
+    }
+
+    public void setScrollControl(boolean scrollControl) {
+        this.mScrollControl = scrollControl;
+    }
+
+    private static final float TOUCH_SLOP_SENSITIVITY = 1.0f;
 
     public DrawerViewContainer(@NonNull Context context) {
         super(context);
@@ -48,28 +66,91 @@ public class DrawerViewContainer extends FrameLayout implements ViewStateManager
     public DrawerViewContainer(@NonNull Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
         init(context);
+        initAttrs(context, attrs);
     }
 
     public DrawerViewContainer(@NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         init(context);
+        initAttrs(context, attrs);
     }
 
     /**
      * 初始化方法
      */
     private void init(Context context) {
-        //初始化ViewDragHelper帮助类
-        mViewDragHelper = ViewDragHelper.create(this, new ViewDragHelper.Callback() {
-            //捕获 mBottomView
-            @Override
-            public boolean tryCaptureView(@NonNull View child, int pointerId) {
-                return child == mBottomView;
-            }
-        });
         //初始化空的控件
         mDrawerView = new DrawerView(context);
         mDrawerView.setLayoutParams(new LayoutParams(0, 0));
+        //初始化ViewDragHelper帮助类
+        mViewDragHelper = ViewDragHelper.create(this, TOUCH_SLOP_SENSITIVITY,
+                new ViewDragHelper.Callback() {
+                    //捕获 mBottomView
+                    @Override
+                    public boolean tryCaptureView(@NonNull View child, int pointerId) {
+                        return child == mBottomView;
+                    }
+
+                    //控制边界，防止mBottomView的头部超出边界
+                    @Override
+                    public int clampViewPositionVertical(@NonNull View child, int top, int dy) {
+                        if (mScrollControl) {
+                            if (child == mBottomView) {
+                                int newTop = top;
+                                newTop = Math.max(newTop, ViewState.FULL.getTop(mBottomView));
+                                return newTop;
+                            }
+                            return top;
+                        }
+                        return super.clampViewPositionVertical(child, top, dy);
+                    }
+
+                    @Override
+                    public void onViewCaptured(@NonNull View capturedChild, int activePointerId) {
+                        super.onViewCaptured(capturedChild, activePointerId);
+                        if (mScrollControl) {
+                            LayoutParams params = (LayoutParams) mBottomView.getLayoutParams();
+                            params.height = mBottomView.getContainer().getMeasuredHeight();
+                            mBottomView.setLayoutParams(params);
+                        }
+                    }
+
+                    //手指释放的时候回调
+                    @Override
+                    public void onViewReleased(@NonNull View releasedChild, float xvel, float yvel) {
+                        super.onViewReleased(releasedChild, xvel, yvel);
+                        if (mScrollControl) {
+                            if (releasedChild == mBottomView) {
+                                int curTop = releasedChild.getTop();
+                                setClosestStateIfBetween(ViewState.FULL, ViewState.HOVER, curTop);
+                                setClosestStateIfBetween(ViewState.HOVER, ViewState.CLOSE, curTop);
+                            }
+                        }
+                    }
+
+                    //判断拖动开合状态的方法
+                    private void setClosestStateIfBetween(ViewState beginState, ViewState endState, int curTop) {
+                        int beginTop = getTopOfState(beginState);
+                        int endTop = getTopOfState(endState);
+                        if (curTop >= beginTop && curTop <= endTop) {
+                            changeState(curTop < (beginTop + endTop) / 2 ? beginState : endState);
+                        }
+                    }
+                });
+        if (mScrollControl) {
+            mViewDragHelper.setEdgeTrackingEnabled(ViewDragHelper.EDGE_BOTTOM);
+        }
+    }
+
+    /**
+     * 初始化自定义属性
+     * @param context Context对象
+     * @param attrs 自定义属性数组
+     */
+    private void initAttrs(Context context, AttributeSet attrs) {
+        TypedArray ta = context.obtainStyledAttributes(attrs, R.styleable.DrawerViewContainer);
+        mScrollControl = ta.getBoolean(R.styleable.DrawerViewContainer_scroll_control, mScrollControl);
+        ta.recycle();
     }
 
     /**
@@ -110,6 +191,36 @@ public class DrawerViewContainer extends FrameLayout implements ViewStateManager
         super.onLayout(changed, left, top, right, bottom);
         //设置当前抽屉的开合状态
         changeState(mBottomView.getState(), false);
+    }
+
+    /**
+     * 处理拦截事件
+     *
+     * @param ev 事件对象
+     * @return 是否拦截
+     */
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (mScrollControl) {
+            return mViewDragHelper.shouldInterceptTouchEvent(ev);
+        }
+        return super.onInterceptTouchEvent(ev);
+    }
+
+    /**
+     * 处理拦截事件
+     *
+     * @param event 事件对象
+     * @return 是否拦截
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (mScrollControl) {
+            mViewDragHelper.processTouchEvent(event);
+            return true;
+        }
+        return super.onTouchEvent(event);
     }
 
     /**
